@@ -11,12 +11,18 @@
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "^1.0.7",
+		"@goat-sdk/adapter-vercel-ai": "^0.2.8",
+		"@goat-sdk/core": "^0.4.7",
+		"@goat-sdk/plugin-erc20": "^0.2.10",
+		"@goat-sdk/plugin-uniswap": "^0.2.11",
+		"@goat-sdk/wallet-evm": "^0.2.8",
+		"@goat-sdk/wallet-viem": "^0.2.8",
 		"@supabase/supabase-js": "^2.47.0",
 		"ai": "^4.0.12",
 		"figlet": "^1.8.0",
 		"hono": "^4.6.12",
 		"openai": "^4.76.1",
-		"viem": "^2.21.54",
+		"viem": "^2.23.2",
 		"zod": "^3.23.8"
 	}
 }
