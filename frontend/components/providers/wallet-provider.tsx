@@ -1,11 +1,11 @@
-"use client";
+"use client"
 
-import { WagmiProvider, createConfig } from "wagmi";
-import { ConnectKitProvider, getDefaultConfig } from "connectkit";
-import { base, arbitrum } from "viem/chains";
-import { env } from "@/env";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { http } from "viem";
+import { WagmiProvider, createConfig } from "wagmi"
+import { ConnectKitProvider, getDefaultConfig } from "connectkit"
+import { base, arbitrum } from "viem/chains"
+import { env } from "@/env"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { http } from "viem"
 
 // Define Mantle chain
 const mantle = {
@@ -24,9 +24,9 @@ const mantle = {
   blockExplorers: {
     default: { name: "MantleScan", url: "https://mantlescan.xyz" },
   },
-} as const;
+} as const
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient()
 
 const config = createConfig(
   getDefaultConfig({
@@ -46,8 +46,8 @@ const config = createConfig(
     appDescription: "AI-Powered Yield Optimization",
     appUrl: env.NEXT_PUBLIC_APP_URL,
     appIcon: `${env.NEXT_PUBLIC_APP_URL}/logo.png`,
-  })
-);
+  }),
+)
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   return (
@@ -64,5 +64,5 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         </ConnectKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
-  );
+  )
 }
