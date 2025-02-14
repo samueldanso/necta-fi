@@ -17,6 +17,7 @@ export const envSchema = z.object({
 		.refine((val) => validateChainId(parseInt(val)), 'Chain ID not supported or not enabled'),
 	CHAIN_NAME: z.string().default('base'),
 	MODEL_NAME: z.string().default('gpt-4o-2024-08-06'),
+	MANTLE_RPC_URL: z.string().default('https://rpc.mantle.xyz'),
 })
 
 export const env = envSchema.parse(process.env)
