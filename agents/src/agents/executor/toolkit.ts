@@ -1,266 +1,126 @@
-import { generateText, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import type { Account } from "viem";
-import { z } from "zod";
-import env from "../../env";
-import {
-  deleteTask,
-  retrieveTaskById,
-  retrieveTasks,
-  storeTask,
-  updateTask,
-} from "../../memory";
-import {
-  createPublicClient,
-  createWalletClient,
-  formatUnits,
-  http,
-} from "viem";
-import { getChain } from "../../utils/chain";
+import { tool } from 'ai'
+import type { Account } from 'viem'
+import { z } from 'zod'
+import { formatUnits, createPublicClient, http } from 'viem'
+import { goatService } from '../../services/goat'
+import { MANTLE_USDC, getTokenAddress } from '../../config/tokens'
+import { mantle } from 'viem/chains'
 
-export const getTransactionDataTool = (account: Account) =>
-  tool({
-    description: "A tool that transforms the tasks into transactions.",
-    parameters: z.object({
-      tasks: z.array(
-        z.object({
-          task: z.string(),
-          taskId: z.string().nullable(),
-        })
-      ),
-    }),
-    execute: async ({
-      tasks,
-    }: {
-      tasks: { task: string; taskId: string | null }[];
-    }) => {
-      console.log("======== getTransactionData Tool =========");
-      console.log(`[getTransactionData] fetching transactions data from Brian`);
-      const transactions = await Promise.all(
-        tasks.map(
-          async ({ task, taskId }: { task: string; taskId: string | null }) => {
-            console.log(
-              `[getTransactionData] fetching transaction data for task: "${task}"`
-            );
-            try {
-              const brianResponse = await fetch(
-                `${
-                  env.BRIAN_API_URL ||
-                  "https://staging-api.brianknows.org/api/v0/agent/transaction"
-                }`,
-                {
-                  method: "POST",
-                  body: JSON.stringify({
-                    prompt: task,
-                    chainId: env.CHAIN_ID,
-                    address: account.address,
-                  }),
-                  headers: {
-                    "Content-Type": "application/json",
-                    "x-brian-api-key": env.BRIAN_API_KEY,
-                  },
-                }
-              );
+interface BalanceInfo {
+	mnt: string
+	usdc: string
+	safeUsdcAmount: string
+	safeMntAmount: string
+	hasGas: boolean
+}
 
-              const { result } = await brianResponse.json();
+interface ExecutorTools {
+	checkBalances: ReturnType<typeof tool>
+	executeAction: ReturnType<typeof tool>
+}
 
-              if (!result) {
-                return null;
-              }
+export const getExecutorToolkit = (account: Account): ExecutorTools => {
+	return {
+		checkBalances: tool({
+			description: 'A tool that checks both MNT and USDC balances.',
+			parameters: z.object({}),
+			execute: async ({}): Promise<BalanceInfo | null> => {
+				console.log('======== checkBalances Tool =========')
+				console.log(`[checkBalances] checking balances for ${account.address}`)
 
-              const data = result[0].data;
-              console.log(
-                `[getTransactionData] Brian says: ${data.description}`
-              );
-              const steps = data.steps;
+				try {
+					// Get native MNT balance first
+					const publicClient = createPublicClient({
+						chain: mantle,
+						transport: http(),
+					})
+					const mntBalance = await publicClient.getBalance({ address: account.address })
+					const formattedMntBalance = formatUnits(mntBalance, 18)
 
-              return {
-                task,
-                steps,
-                taskId,
-                fromToken: data.fromToken,
-                fromAmountUSD: `$${data.fromAmountUSD}`,
-                toToken: data.toToken,
-                toAmountUSD: `$${data.toAmountUSD}`,
-                fromAmount: formatUnits(
-                  data.fromAmount,
-                  data.fromToken.decimals
-                ),
-                outputAmount: formatUnits(
-                  data.toAmountMin,
-                  data.toToken.decimals
-                ),
-              };
-            } catch (error) {
-              console.error(error);
-              return null;
-            }
-          }
-        )
-      );
+					// Initialize GOAT service if needed
+					if (!goatService.isInitialized()) {
+						await goatService.initialize()
+					}
 
-      if (transactions.length !== tasks.length) {
-        return `Some transactions failed to fetch, please rewrite the tasks.`;
-      }
+					// Get USDC balance
+					const tokenAddress = getTokenAddress(MANTLE_USDC, '5000')
+					const usdcBalance = await goatService.getBalance({
+						token: tokenAddress,
+						address: account.address,
+					})
+					const formattedUsdcBalance = formatUnits(BigInt(usdcBalance), 6)
 
-      const validTransactions = transactions.filter(
-        (transaction) => transaction !== null
-      );
+					// Calculate safe amounts for transactions (keeping reserves)
+					const safeUsdcAmount = Number(formattedUsdcBalance) * 0.95 // Keep 5% as reserve
+					const safeMntAmount = Number(formattedMntBalance) - 0.001 // Keep 0.001 MNT for future gas
 
-      const taskIds: any[] = [];
-      for (const transaction of validTransactions) {
-        if (transaction.taskId) {
-          const { data: taskData } = await updateTask(
-            transaction.taskId,
-            transaction.task,
-            transaction.steps,
-            transaction.fromToken,
-            transaction.toToken,
-            transaction.fromAmount,
-            transaction.outputAmount
-          );
-          taskIds.push({
-            taskId: taskData![0].id,
-            task: transaction.task,
-            createdAt: taskData![0].created_at,
-          });
-        } else {
-          const { data: taskData } = await storeTask(
-            transaction.task,
-            transaction.steps,
-            transaction.fromToken,
-            transaction.toToken,
-            transaction.fromAmount,
-            transaction.outputAmount
-          );
-          taskIds.push({
-            taskId: taskData![0].id,
-            task: transaction.task,
-            createdAt: taskData![0].created_at,
-          });
-        }
-      }
+					return {
+						mnt: formattedMntBalance,
+						usdc: formattedUsdcBalance,
+						safeUsdcAmount: safeUsdcAmount.toFixed(6),
+						safeMntAmount: safeMntAmount > 0 ? safeMntAmount.toFixed(18) : '0',
+						hasGas: Number(formattedMntBalance) >= 0.0001,
+					}
+				} catch (error) {
+					console.error('Error checking balances:', error)
+					return null
+				}
+			},
+		}),
+		executeAction: tool({
+			description:
+				'A tool that simulates deposits and swaps on Mantle, keeping safe reserves.',
+			parameters: z.object({
+				action: z.object({
+					type: z.enum(['deposit', 'swap']),
+					amount: z.string(),
+					token: z.string(),
+					protocol: z.string(),
+					targetToken: z.string().optional(),
+				}),
+			}),
+			execute: async ({ action }): Promise<string> => {
+				console.log('======== executeAction Tool =========')
 
-      console.log(`[getTransactionData] transactions fetched correctly.`);
+				try {
+					const balances: BalanceInfo | null = await getExecutorToolkit(
+						account
+					).checkBalances.execute({})
+					if (!balances) {
+						return 'Failed to check balances'
+					}
+					if (!balances.hasGas) {
+						return 'Insufficient MNT for gas fees. Need at least 0.0001 MNT.'
+					}
 
-      return taskIds;
-    },
-  });
+					// Check if amount is within safe limits
+					const amount = Number(action.amount)
+					if (
+						action.token.toLowerCase() === 'usdc' &&
+						amount > Number(balances.safeUsdcAmount)
+					) {
+						return `Amount too high. Maximum safe USDC amount is ${balances.safeUsdcAmount} (keeping 5% reserve)`
+					}
+					if (
+						action.token.toLowerCase() === 'mnt' &&
+						amount > Number(balances.safeMntAmount)
+					) {
+						return `Amount too high. Maximum safe MNT amount is ${balances.safeMntAmount} (keeping 0.001 MNT for gas)`
+					}
 
-export const getExecutorToolkit = (account: Account) => {
-  return {
-    getTransactionData: getTransactionDataTool(account),
-    simulateTasks: tool({
-      description:
-        "A tool that simulates the output of all the tasks. It is useful to to check the outputs and to fix the inputs of other tasks. Always use this tool before the executeTransaction tool.",
-      parameters: z.object({}),
-      execute: async ({}) => {
-        console.log("======== simulateTasks Tool =========");
+					// Simulate the action
+					if (action.type === 'deposit') {
+						return `Would deposit ${action.amount} ${action.token} into ${action.protocol} (simulation only)`
+					} else if (action.type === 'swap') {
+						return `Would swap ${action.amount} ${action.token} for ${action.targetToken} on ${action.protocol} (simulation only)`
+					}
 
-        const { data: taskIds } = await retrieveTasks();
-
-        if (!taskIds) {
-          return `No tasks found.`;
-        }
-
-        const tasks = await Promise.all(
-          taskIds.map(async ({ id: taskId }) => {
-            const { data: taskData } = await retrieveTaskById(taskId);
-
-            if (!taskData) {
-              return `Transaction not found for task [id: ${taskId}].`;
-            }
-
-            if (!taskData[0].steps) {
-              return `Transaction not found for task [id: ${taskId}].`;
-            }
-
-            return [
-              `[taskId: ${taskId}] "${taskData[0].task}"`,
-              `The transaction is from ${taskData[0].to_token.symbol} to ${taskData[0].from_token.symbol}.`,
-              `The amount is ${taskData[0].from_amount} ${taskData[0].from_token.symbol} and the output amount is ${taskData[0].to_amount} ${taskData[0].to_token.symbol}.`,
-              `Fix the task accordingly and return just the updated task.`,
-            ].join("\n");
-          })
-        );
-
-        const response = await generateText({
-          model: openai("gpt-4o-mini"),
-          prompt: [
-            `You have simulated all the tasks you need to execute. This is the output of the simulation:`,
-            tasks.join("\n"),
-            `Fix the tasks accordingly and return just the updated tasks.`,
-            `When the tasks are updated, remind yourself to get the updated transaction data and then execute the tasks.`,
-          ].join("\n"),
-        });
-
-        return response.text;
-      },
-    }),
-    executeTransaction: tool({
-      description:
-        "A tool that executes a transaction. Execute transactions in chronological order.",
-      parameters: z.object({
-        task: z.string(),
-        taskId: z.string(),
-      }),
-      execute: async ({ task, taskId }) => {
-        console.log("======== executeTransaction Tool =========");
-        console.log(
-          `[executeTransaction] executing transaction with task id: ${taskId}`
-        );
-
-        const { data: taskData } = await retrieveTaskById(taskId);
-
-        if (!taskData) {
-          return `Transaction not found for task: "${task}" [id: ${taskId}].`;
-        }
-
-        const walletClient = createWalletClient({
-          account,
-          chain: getChain(parseInt(env.CHAIN_ID)),
-          transport: http(),
-        });
-        const publicClient = createPublicClient({
-          chain: getChain(parseInt(env.CHAIN_ID)),
-          transport: http(),
-        });
-
-        const hashes: string[] = [];
-
-        for (const step of taskData[0].steps) {
-          try {
-            const hash = await walletClient.sendTransaction({
-              to: step.to,
-              value: BigInt(step.value),
-              data: step.data,
-            });
-            console.log(`[executeTransaction] transaction hash: ${hash}`);
-            const receipt = await publicClient.waitForTransactionReceipt({
-              hash,
-            });
-            console.log(
-              `[executeTransaction] transaction receipt: ${receipt.transactionHash}`
-            );
-            hashes.push(receipt.transactionHash);
-          } catch (error) {
-            console.log(
-              `[executeTransaction] transaction for task "${task}" failed: ${error}`
-            );
-            return `[${new Date().toISOString()}] Transaction errored for task: "${task}". The error is: ${JSON.stringify(
-              error,
-              null,
-              2
-            )}`;
-          }
-        }
-
-        await deleteTask(taskId);
-
-        return `[${new Date().toISOString()}] Transaction executed successfully for task: "${task}". Transaction hashes: ${hashes.join(
-          ", "
-        )}`;
-      },
-    }),
-  };
-};
+					return 'Unknown action type'
+				} catch (error) {
+					console.error('Error executing action:', error)
+					return `Error executing action: ${error}`
+				}
+			},
+		}),
+	}
+}

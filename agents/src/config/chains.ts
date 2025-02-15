@@ -38,6 +38,17 @@ export type ChainConfig = z.infer<typeof chainConfigSchema>
  * Add new chains here to make them available in the system
  */
 export const SUPPORTED_CHAINS: Record<number, ChainConfig> = {
+	5000: {
+		id: 5000,
+		name: 'mantle',
+		displayName: 'Mantle',
+		enabled: true,
+		minLiquidity: 10_000_000,
+		minEthBalance: '0.0001',
+		portals: {
+			networkId: 'mantle',
+		},
+	},
 	8453: {
 		id: 8453,
 		name: 'base',
