@@ -1,34 +1,58 @@
-"use client"
+"use client";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Button } from "@/components/ui/button"
-import { NETWORKS } from "@/lib/constants/app"
-import { ChevronDown } from "lucide-react"
-import Image from "next/image"
-import { useSwitchChain, useChainId } from "wagmi"
-import { base, arbitrum, type Chain } from "viem/chains"
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { NETWORKS } from "@/lib/constants/app";
+import { ChevronDown } from "lucide-react";
+import Image from "next/image";
+import { useSwitchChain, useChainId } from "wagmi";
+import { base, arbitrum, type Chain } from "viem/chains";
+
+// Define Mantle chain
+const mantle = {
+  id: 5000,
+  name: "Mantle",
+  network: "mantle",
+  nativeCurrency: {
+    decimals: 18,
+    name: "MNT",
+    symbol: "MNT",
+  },
+  rpcUrls: {
+    default: { http: ["https://rpc.mantle.xyz"] },
+    public: { http: ["https://rpc.mantle.xyz"] },
+  },
+  blockExplorers: {
+    default: { name: "MantleScan", url: "https://mantlescan.xyz" },
+  },
+} as const;
 
 interface NetworkData {
-  name: string
-  icon: string
-  chain: Chain
+  name: string;
+  icon: string;
+  chain: Chain;
 }
 
 const chainData = new Map<number, NetworkData>([
-  [base.id, { ...NETWORKS[0], chain: base }],
-  [arbitrum.id, { ...NETWORKS[1], chain: arbitrum }],
-])
+  [mantle.id, { name: "Mantle", icon: "/protocols/mantle.svg", chain: mantle }],
+  [base.id, { ...NETWORKS[1], chain: base }],
+  [arbitrum.id, { ...NETWORKS[2], chain: arbitrum }],
+]);
 
-const defaultNetwork: NetworkData = { ...NETWORKS[0], chain: base }
+const defaultNetwork: NetworkData = {
+  name: "Mantle",
+  icon: "/protocols/mantle.svg",
+  chain: mantle,
+};
 
 export function NetworkSelector() {
-  const chainId = useChainId()
-  const { switchChain } = useSwitchChain()
-  const selectedNetwork = chainData.get(chainId) || defaultNetwork
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
+  const selectedNetwork = chainData.get(chainId) || defaultNetwork;
 
   return (
     <DropdownMenu>
@@ -73,5 +97,5 @@ export function NetworkSelector() {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

@@ -19,6 +19,10 @@ export class GoatService {
 	private walletClient: WalletClient | null = null
 	private publicClient: PublicClient | null = null
 
+	isInitialized(): boolean {
+		return this.tools !== null && this.walletClient !== null && this.publicClient !== null
+	}
+
 	async initialize() {
 		try {
 			const account = privateKeyToAccount(env.PRIVATE_KEY as `0x${string}`)

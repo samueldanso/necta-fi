@@ -1,12 +1,12 @@
-import { Github, Twitter } from "lucide-react"
+import { Github, Twitter } from "lucide-react";
 
 interface AppMenuItem {
-  href: string
-  title: string
-  icon?: React.ReactNode
+  href: string;
+  title: string;
+  icon?: React.ReactNode;
 }
 
-export const APP_MENU: AppMenuItem[] = []
+export const APP_MENU: AppMenuItem[] = [];
 
 export const APP_LINKS = [
   {
@@ -17,7 +17,7 @@ export const APP_LINKS = [
     name: "Docs",
     href: "http://blog.nectafi.xyz/docs",
   },
-] as const
+] as const;
 
 export const APP_SOCIALS = [
   {
@@ -30,9 +30,13 @@ export const APP_SOCIALS = [
     href: "https://github.com/nectalabs",
     icon: Github,
   },
-] as const
+] as const;
 
 export const NETWORKS = [
+  {
+    name: "Mantle",
+    icon: "/protocols/mantle.svg",
+  },
   {
     name: "Base",
     icon: "/protocols/base.svg",
@@ -41,7 +45,7 @@ export const NETWORKS = [
     name: "Arbitrum",
     icon: "/protocols/arbitrum.svg",
   },
-] as const
+] as const;
 
 export const PROTOCOLS = [
   {
@@ -59,4 +63,4 @@ export const PROTOCOLS = [
     apy: "10.78%",
     icon: "/protocols/morpho.png",
   },
-] as const
+] as const;

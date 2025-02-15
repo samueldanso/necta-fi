@@ -3,6 +3,12 @@ import type { Hex } from 'viem'
 import { getAccountBalances, getMarketData } from '../../data'
 import { z } from 'zod'
 import { retrievePastReports } from '../../memory'
+import { defiLlama } from '../../data/defi-llama'
+import type { YieldPool } from '../../data/defi-llama'
+import { goatService } from '../../services/goat'
+import { MANTLE_USDC, getTokenAddress } from '../../config/tokens'
+import { formatUnits, createPublicClient, http } from 'viem'
+import { mantle } from 'viem/chains'
 
 export const getSentinelToolkit = (address: Hex) => {
 	return {
@@ -41,36 +47,70 @@ export const getSentinelToolkit = (address: Hex) => {
 			execute: async () => {
 				console.log('======== getWalletBalances Tool =========')
 				console.log(`[getWalletBalances] fetching token balances for ${address}...`)
-				const { balances } = await getAccountBalances(address)
 
-				const tokenBalances = balances
-					.filter(
-						(balance: any) =>
-							balance.platform === 'native' || balance.platform === 'basic'
-					)
+				try {
+					// Initialize GOAT service if not already initialized
+					if (!goatService.isInitialized()) {
+						await goatService.initialize()
+					}
+
+					// Get USDC balance
+					const tokenAddress = getTokenAddress(MANTLE_USDC, '5000')
+					const usdcBalance = await goatService.getBalance({
+						token: tokenAddress,
+						address,
+					})
+					const formattedUsdcBalance = formatUnits(BigInt(usdcBalance), 6) // USDC has 6 decimals
+
+					// Get native MNT balance
+					const publicClient = createPublicClient({
+						chain: mantle,
+						transport: http(),
+					})
+					const mntBalance = await publicClient.getBalance({ address })
+					const formattedMntBalance = formatUnits(mntBalance, 18) // MNT has 18 decimals
+
+					console.log(`[getWalletBalances] balances fetched correctly.`)
+					return `This is the current status of the wallet with address ${address}:\nTokens:\nMNT: ${formattedMntBalance} ($${(
+						Number(formattedMntBalance) * 1.037
+					).toFixed(2)})\nUSDC: ${formattedUsdcBalance} ($${Number(
+						formattedUsdcBalance
+					).toFixed(2)})`
+				} catch (error) {
+					console.error('Error fetching wallet balances:', error)
+					return { balances: [] }
+				}
+			},
+		}),
+		getMantleYieldData: tool({
+			description: 'A tool that returns the current yield opportunities on Mantle network.',
+			parameters: z.object({
+				minApy: z.number().optional().describe('Minimum APY threshold (default: 3)'),
+				maxApy: z.number().optional().describe('Maximum APY threshold (default: 60)'),
+				minTvl: z.number().optional().describe('Minimum TVL threshold (default: 10000)'),
+			}),
+			execute: async ({ minApy, maxApy, minTvl }) => {
+				console.log('======== getMantleYieldData Tool =========')
+				console.log(`[getMantleYieldData] fetching yield opportunities...`)
+				const pools = await defiLlama.getYieldPools({ minApy, maxApy, minTvl })
+
+				if (!pools || pools.length === 0) {
+					return 'No yield opportunities found on Mantle network'
+				}
+
+				const formattedPools = pools
 					.map(
-						(balance: any) =>
-							`[${balance.symbol}] balance: ${balance.balance} $${balance.balanceUSD}) - price: $${balance.price}`
+						(pool: YieldPool) =>
+							`[${pool.project}] ${pool.symbol} - APY: ${pool.apy}% (Base: ${
+								pool.apyBase
+							}%, Reward: ${
+								pool.apyReward || 0
+							}%) - TVL: $${pool.tvlUsd.toLocaleString()}`
 					)
 					.join('\n')
 
-				const formattedBalances = balances
-					.filter(
-						(balance: any) =>
-							balance.platform !== 'native' && balance.platform !== 'basic'
-					)
-					.map(
-						(balance: any) =>
-							`[${balance.symbol}] balance: ${balance.balance} $${
-								balance.balanceUSD
-							}) on protocol ${balance.platform.replace('-', ' ')} with APY ${
-								balance.metrics.apy
-							}%`
-					)
-					.join('\n')
-
-				console.log(`[getWalletBalances] balances fetched correctly.`)
-				return `This is the current status of the wallet with address ${address}:\nTokens:\n${tokenBalances}\nOpen positions:\n${formattedBalances}`
+				console.log(`[getMantleYieldData] found ${pools.length} opportunities`)
+				return `Current yield opportunities on Mantle:\n${formattedPools}`
 			},
 		}),
 		getMarketData: tool({
@@ -79,25 +119,25 @@ export const getSentinelToolkit = (address: Hex) => {
 			execute: async () => {
 				console.log('======== getMarketData Tool =========')
 				console.log(`[getMarketData] fetching market data...`)
-				const marketData = await getMarketData()
+				const marketData = await defiLlama.getMarketData()
 
-				const formatTokens = (data: any) => {
-					if (!data?.tokens || data.tokens.length === 0) {
-						return 'No opportunities found'
-					}
-
-					return data.tokens
-						.map(
-							(token: any) =>
-								`[${token.name}] APY: ${token.metrics.apy}% - volume 1d: $${token.metrics.volumeUsd1d} - volume 7d: $${token.metrics.volumeUsd7d}`
-						)
-						.join('\n')
+				if (!marketData.usdc.tokens || marketData.usdc.tokens.length === 0) {
+					return 'No USDC opportunities found on Mantle'
 				}
 
-				const usdcFormatted = formatTokens(marketData.usdc)
+				const usdcFormatted = marketData.usdc.tokens
+					.map(
+						(pool: YieldPool) =>
+							`[${pool.project}] ${pool.symbol} - APY: ${pool.apy}% (Base: ${
+								pool.apyBase
+							}%, Reward: ${
+								pool.apyReward || 0
+							}%) - TVL: $${pool.tvlUsd.toLocaleString()}`
+					)
+					.join('\n')
 
 				console.log(`[getMarketData] market data fetched correctly.`)
-				return `These are the current market opportunities:\n\nUSDC Opportunities:\n${usdcFormatted}`
+				return `Current USDC opportunities on Mantle:\n${usdcFormatted}`
 			},
 		}),
 		noFurtherActionsTool: tool({
